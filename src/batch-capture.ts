@@ -61,7 +61,9 @@ export function captureBatch(
 export function captureUnindexedBatchesFromSession(
   branch: any[],
   indexer: { isSummarized(id: string): boolean },
-  excludeToolNames: string[] = []
+  excludeToolNames: string[] = [],
+  minResultChars: number = 0,
+  ignoredToolCallIds?: ReadonlySet<string>,
 ): CapturedBatch[] {
   // branch is SessionEntry[]. Each message entry has { type: "message", message: AgentMessage }.
   // We must unwrap the SessionEntry wrapper before accessing role/toolCallId.
@@ -112,8 +114,19 @@ export function captureUnindexedBatchesFromSession(
       const id = tc.id;
       if (!id) return false;
       if (indexer.isSummarized(id)) return false;
+      if (ignoredToolCallIds?.has(id)) return false;
       if (excludeToolNames.includes(tc.name)) return false;
-      return resultMap.has(id);
+      const result = resultMap.get(id);
+      if (!result) return false;
+      if (minResultChars > 0) {
+        const resultContent: any[] = Array.isArray(result.content) ? result.content : [];
+        const resultText = resultContent
+          .filter((c: any) => c.type === "text")
+          .map((c: any) => c.text)
+          .join("\\n");
+        if (resultText.length < minResultChars) return false;
+      }
+      return true;
     });
 
     if (readyToPrune.length > 0) {

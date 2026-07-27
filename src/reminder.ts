@@ -34,7 +34,23 @@ const PRUNER_NOTE_CLOSE = "</pruner-note>";
  * appears as an `AssistantMessage` `toolCall` content block but is absent
  * from the indexer.
  */
-export function countUnprunedToolCalls(messages: any[], indexer: ToolCallIndexer): number {
+export function countUnprunedToolCalls(
+  messages: any[],
+  indexer: ToolCallIndexer,
+  minResultChars = 0,
+  ignoredToolCallIds?: ReadonlySet<string>,
+): number {
+  const resultLengths = new Map<string, number>();
+  for (const msg of messages) {
+    if (msg?.role !== "toolResult" || !msg.toolCallId) continue;
+    const content = Array.isArray(msg.content) ? msg.content : [];
+    const text = content
+      .filter((block: any) => block?.type === "text")
+      .map((block: any) => block.text)
+      .join("\\n");
+    resultLengths.set(msg.toolCallId, text.length);
+  }
+
   let count = 0;
   for (const msg of messages) {
     if (msg?.role !== "assistant") continue;
@@ -42,8 +58,11 @@ export function countUnprunedToolCalls(messages: any[], indexer: ToolCallIndexer
     for (const block of msg.content) {
       if (block?.type !== "toolCall") continue;
       const id = block.toolCallId ?? block.id;
-      if (!id) continue;
-      if (!indexer.isSummarized(id)) count++;
+      if (!id || indexer.isSummarized(id) || ignoredToolCallIds?.has(id)) continue;
+      const resultLength = resultLengths.get(id);
+      if (resultLength === undefined) continue;
+      if (minResultChars > 0 && resultLength < minResultChars) continue;
+      count++;
     }
   }
   return count;

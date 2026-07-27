@@ -81,6 +81,7 @@ const SUBCOMMANDS = [
   { value: "stats",   label: "stats     — show cumulative summarizer token/cost stats" },
   { value: "tree",    label: "tree      — browse pruned tool calls in a foldable tree" },
   { value: "now",     label: "now       — flush pending tool calls immediately (widget progress)" },
+  { value: "clear",   label: "clear     — discard the current prune queue" },
   { value: "help",    label: "help      — show this help" },
 ] as const;
 
@@ -191,6 +192,7 @@ Usage:
   /pruner stats                            Show cumulative summarizer token/cost stats
   /pruner tree                             Browse pruned tool calls in a foldable tree (Ctrl-O opens selected summary)
   /pruner now                              Flush pending tool calls immediately (shows live footer progress)
+  /pruner clear                            Discard the current prune queue
   /pruner help                             Show this help
 
 Agentic-auto reminder:
@@ -353,6 +355,7 @@ export function registerCommands(
   syncToolActivation: () => void,
   getStats: () => SummarizerStats,
   indexer: ToolCallIndexer,
+  clearPendingQueue: (ctx: ExtensionCommandContext) => number,
 ): void {
   // Register the /pruner command
   pi.registerCommand("pruner", {
@@ -460,6 +463,13 @@ export function registerCommands(
               currentValue: config.batchingMode,
               description: batchingModeDescription(config.batchingMode),
             },
+            {
+              id: "minResultChars",
+              label: "Min result chars",
+              values: ["0", "100", "200", "500", "1000", "2000"],
+              currentValue: String(config.minResultChars),
+              description: `Skip pruning tool calls whose result text is shorter than this many characters. Currently ${config.minResultChars}. Set to 0 to prune all results regardless of size.`,
+            },
           ];
 
           let settingsList: SettingsList;
@@ -508,6 +518,15 @@ export function registerCommands(
               const batchingItem = items.find((item) => item.id === "batchingMode");
               if (batchingItem) {
                 batchingItem.description = batchingModeDescription(newConfig.batchingMode);
+              }
+            } else if (id === "minResultChars") {
+              const parsed = Number(newValue);
+              if (Number.isFinite(parsed) && parsed >= 0) {
+                newConfig.minResultChars = parsed;
+              }
+              const minCharsItem = items.find((item) => item.id === "minResultChars");
+              if (minCharsItem) {
+                minCharsItem.description = `Skip pruning tool calls whose result text is shorter than this many characters. Currently ${newConfig.minResultChars}. Set to 0 to prune all results regardless of size.`;
               }
             }
             currentConfig.value = newConfig;
@@ -595,6 +614,19 @@ export function registerCommands(
               overlay: true,
               overlayOptions: { width: "80%", maxHeight: "70%", anchor: "center" },
             },
+          );
+          break;
+        }
+
+        // ── /pruner clear ──
+        case "clear": {
+          const cleared = clearPendingQueue(ctx);
+          setPruneStatusWidget(ctx, currentConfig.value, getStats());
+          ctx.ui.notify(
+            cleared > 0
+              ? `pruner: cleared ${cleared} queued tool call${cleared === 1 ? "" : "s"}`
+              : "pruner: queue already empty",
+            "info",
           );
           break;
         }

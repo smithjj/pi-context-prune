@@ -54,6 +54,8 @@ export default function (pi: ExtensionAPI) {
 
   // Pending batches — accumulated until the prune trigger fires
   const pendingBatches: CapturedBatch[] = [];
+  // Tool calls discarded by /pruner clear must not be rediscovered or counted.
+  const ignoredToolCallIds = new Set<string>();
   let isFlushing = false;
 
   type FlushResult =
@@ -138,7 +140,13 @@ export default function (pi: ExtensionAPI) {
     let batches: CapturedBatch[] = [];
     try {
       const branch = ctx.sessionManager.getBranch();
-      batches = captureUnindexedBatchesFromSession(branch, indexer, [CONTEXT_PRUNE_TOOL_NAME]);
+      batches = captureUnindexedBatchesFromSession(
+        branch,
+        indexer,
+        [CONTEXT_PRUNE_TOOL_NAME],
+        currentConfig.value.minResultChars,
+        ignoredToolCallIds,
+      );
     } catch {
       batches = pendingBatches.slice();
     }
@@ -146,6 +154,20 @@ export default function (pi: ExtensionAPI) {
       .map((batch) => trimBatchToPendingRange(batch))
       .filter((batch): batch is CapturedBatch => batch !== null);
     return groupBatchesByMode(batches, currentConfig.value.batchingMode);
+  };
+
+  const clearPendingQueue = (ctx: any): number => {
+    const queued = capturePendingBatches(ctx);
+    const ids = new Set<string>();
+    for (const batch of queued) {
+      for (const toolCall of batch.toolCalls) ids.add(toolCall.toolCallId);
+    }
+    for (const batch of pendingBatches) {
+      for (const toolCall of batch.toolCalls) ids.add(toolCall.toolCallId);
+    }
+    pendingBatches.length = 0;
+    for (const id of ids) ignoredToolCallIds.add(id);
+    return ids.size;
   };
 
   // Summarizes + indexes all pending batches.
@@ -403,6 +425,7 @@ export default function (pi: ExtensionAPI) {
 
     // Clear any batches queued before the session reload
     pendingBatches.length = 0;
+    ignoredToolCallIds.clear();
 
     // Update footer status
     setPruneStatusWidget(ctx, currentConfig.value, statsAccum.getStats());
@@ -423,6 +446,7 @@ export default function (pi: ExtensionAPI) {
     frontier.reconstructFromSession(ctx);
     // Pending batches belong to the old branch — discard them
     pendingBatches.length = 0;
+    ignoredToolCallIds.clear();
   });
 
   // ── turn_end: capture batch, flush immediately or queue ──────────────────
@@ -449,7 +473,12 @@ export default function (pi: ExtensionAPI) {
       // Do not summarize the pruner's own housekeeping tool result. Otherwise
       // agentic-auto mode can queue the context_prune result and try to flush it
       // during agent_end, when Pi may already have invalidated the extension ctx.
-      toolCalls: capturedBatch.toolCalls.filter((tc) => tc.toolName !== CONTEXT_PRUNE_TOOL_NAME),
+      toolCalls: capturedBatch.toolCalls.filter(
+        (tc) =>
+          tc.toolName !== CONTEXT_PRUNE_TOOL_NAME &&
+          !ignoredToolCallIds.has(tc.toolCallId) &&
+          (!currentConfig.value.minResultChars || tc.resultText.length >= currentConfig.value.minResultChars),
+      ),
     });
     if (!batch) return;
 
@@ -539,7 +568,12 @@ export default function (pi: ExtensionAPI) {
       currentConfig.value.pruneOn === "agentic-auto" &&
       currentConfig.value.remindUnprunedCount
     ) {
-      const count = countUnprunedToolCalls(messages, indexer);
+      const count = countUnprunedToolCalls(
+        messages,
+        indexer,
+        currentConfig.value.minResultChars,
+        ignoredToolCallIds,
+      );
       if (count > 0) {
         const annotated = annotateWithUnprunedCount(messages, count);
         if (annotated !== messages) {
@@ -570,5 +604,14 @@ export default function (pi: ExtensionAPI) {
   registerContextPruneTool(pi, (ctx, options) => flushPending(ctx, { delivery: "runtime", ...options }));
 
   // ── Register /pruner command + summary message renderer ────────────
-  registerCommands(pi, currentConfig, flushPending, capturePendingBatches, syncToolActivation, () => statsAccum.getStats(), indexer);
+  registerCommands(
+    pi,
+    currentConfig,
+    flushPending,
+    capturePendingBatches,
+    syncToolActivation,
+    () => statsAccum.getStats(),
+    indexer,
+    clearPendingQueue,
+  );
 }

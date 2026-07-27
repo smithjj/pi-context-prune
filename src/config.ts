@@ -36,6 +36,10 @@ export async function loadConfig(): Promise<ContextPruneConfig> {
         typeof merged.remindUnprunedCount === "boolean"
           ? merged.remindUnprunedCount
           : DEFAULT_CONFIG.remindUnprunedCount,
+      minResultChars:
+        typeof merged.minResultChars === "number" && merged.minResultChars >= 0
+          ? merged.minResultChars
+          : DEFAULT_CONFIG.minResultChars,
     };
   } catch {
     return { ...DEFAULT_CONFIG };

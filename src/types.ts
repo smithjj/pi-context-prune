@@ -174,6 +174,8 @@ export interface ContextPruneConfig {
    *                     (all turns between two user messages are merged)
    */
   batchingMode: BatchingMode;
+  /** Minimum result length eligible for pruning; shorter results remain untouched. */
+  minResultChars: number;
 }
 
 export const DEFAULT_CONFIG: ContextPruneConfig = {
@@ -184,6 +186,7 @@ export const DEFAULT_CONFIG: ContextPruneConfig = {
   pruneOn: "agent-message",
   remindUnprunedCount: true,
   batchingMode: "turn",
+  minResultChars: 500,
 };
 
 // ── Captured batch ─────────────────────────────────────────────────────────
