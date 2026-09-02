@@ -12,6 +12,7 @@ import {
 import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
 import { saveConfig } from "./config.js";
 import { formatTokens, formatCost, formatCharProgress } from "./stats.js";
+import { formatPendingBatchList } from "./queue-list.js";
 import { Container, Text, SettingsList, type SettingItem } from "@earendil-works/pi-tui";
 import { DynamicBorder, getSettingsListTheme } from "@earendil-works/pi-coding-agent";
 import { buildPruneTree, TreeBrowser } from "./tree-browser.js";
@@ -80,6 +81,7 @@ const SUBCOMMANDS = [
   { value: "batching", label: "batching  — show or set the batching mode (turn / agent-message)" },
   { value: "stats",   label: "stats     — show cumulative summarizer token/cost stats" },
   { value: "tree",    label: "tree      — browse pruned tool calls in a foldable tree" },
+  { value: "list",    label: "list      — list queued pruning batches" },
   { value: "now",     label: "now       — flush pending tool calls immediately (widget progress)" },
   { value: "clear",   label: "clear     — discard the current prune queue" },
   { value: "help",    label: "help      — show this help" },
@@ -191,6 +193,7 @@ Usage:
   /pruner batching agent-message           One summary per user→final-agent-message span (merges all turns in a span)
   /pruner stats                            Show cumulative summarizer token/cost stats
   /pruner tree                             Browse pruned tool calls in a foldable tree (Ctrl-O opens selected summary)
+  /pruner list                             List queued pruning batches with tool calls and raw character counts
   /pruner now                              Flush pending tool calls immediately (shows live footer progress)
   /pruner clear                            Discard the current prune queue
   /pruner help                             Show this help
@@ -615,6 +618,12 @@ export function registerCommands(
               overlayOptions: { width: "80%", maxHeight: "70%", anchor: "center" },
             },
           );
+          break;
+        }
+
+        // ── /pruner list ──
+        case "list": {
+          ctx.ui.notify(formatPendingBatchList(capturePendingBatches(ctx)), "info");
           break;
         }
 

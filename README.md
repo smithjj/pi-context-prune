@@ -145,6 +145,7 @@ The extension registers the `/pruner` command:
 | `/pruner prune-on <mode>` | Set trigger mode directly |
 | `/pruner stats` | Show cumulative summarizer token/cost stats |
 | `/pruner tree` | Browse pruned tool calls in a foldable tree browser; press `Ctrl-O` on a summary to open it in a bordered overlay |
+| `/pruner list` | List queued pruning batches with aggregate and per-batch tool-call and raw-character counts |
 | `/pruner now` | Flush pending tool calls immediately (works in all modes) with a live progress overlay that shows streamed received-character counts per batch |
 | `/pruner help` | Show full help text |
 
@@ -269,6 +270,7 @@ src/
   frontier.ts               — persisted prune-frontier tracker for last attempted prune boundary
   stats.ts                  — StatsAccumulator for cumulative token/cost tracking
   tree-browser.ts           — foldable tree browser for /pruner tree
+  queue-list.ts             — compact queue formatter for /pruner list
   commands.ts               — /pruner command + settings overlay + message renderer
 ```
 

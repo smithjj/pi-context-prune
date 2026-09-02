@@ -39,13 +39,14 @@ pi-context-prune/
     ├── tree-browser.ts            # TreeBrowser TUI component + buildPruneTree for /pruner tree
     ├── stats.ts                   # StatsAccumulator for cumulative summarizer token/cost tracking
     ├── multi-batch-loader.ts      # MultiBatchLoaderOverlay TUI component for /pruner now progress display
+    ├── queue-list.ts              # Compact queued-batch formatter for /pruner list
     └── commands.ts                # /pruner command + interactive settings overlay + summary message renderer
 ```
 
 ### `index.ts` — Extension entry point
 Wires all modules together and registers Pi event handlers:
 - **`pendingBatches: CapturedBatch[]`** — queue of captured batches not yet summarized; drained by `flushPending`.
-- **`capturePendingBatches(ctx)`** — extracted helper that runs the capture + trim + group steps from `flushPending` without any LLM work. Exposed to `commands.ts` via `registerCommands` so `/pruner now` can preview the pending queue and know the batch count before opening the `MultiBatchLoaderOverlay`.
+- **`capturePendingBatches(ctx)`** — extracted helper that runs the capture + trim + group steps from `flushPending` without any LLM work. Exposed to `commands.ts` via `registerCommands` so `/pruner list` can inspect the exact queue and `/pruner now` can preview the batch count before opening the `MultiBatchLoaderOverlay`.
 - **`flushPending(ctx, options?)`** — summarizes + indexes all unsummarized batches in parallel by default, or sequentially (one call per batch) when `options.onProgress` is provided. Accepts `FlushOptions`: `{ delivery?, onProgress?, onBatchTextProgress?, previewedBatches? }`. When `previewedBatches` is set the internal capture step is skipped (avoids double-capture from `/pruner now`). While summarization is running, `onBatchTextProgress` receives the streamed summary character count for the active batch so callers can surface live progress in richer UIs (the `/pruner now` overlay and `context_prune` tool updates), while the footer itself stays at the simpler `prune: summarizing…` state. Returns a typed `FlushResult`.
 
 - **`syncToolActivation()`** — activates or deactivates the `context_prune` tool in the Pi active-tools list based on whether `enabled && pruneOn === "agentic-auto"`. Uses `pi.getActiveTools()` / `pi.setActiveTools()` (ExtensionAPI, not ExtensionContext).
@@ -173,7 +174,7 @@ Accumulates cumulative token/cost stats for summarizer LLM calls and persists th
 ### `src/commands.ts` — `/pruner` command + settings overlay + renderer
 - **`SettingsOverlay`** — a TUI `Container` subclass that wraps a `SettingsList` with a `DynamicBorder` + title. Forwards `handleInput` and `invalidate` to the inner list so keyboard navigation works inside the overlay.
 - **`pruneStatusText(config, stats?)`** — formats the footer widget string including mode label and optional stats suffix: e.g. `prune: ON (Every turn) │ ↑1.2k ↓340 $0.003`.
-- **`SUBCOMMANDS`** — `{ value, label }` array for tab-completion and the interactive picker. Includes `settings`, `on`, `off`, `status`, `model`, `thinking`, `prune-on`, `batching`, `stats`, `tree`, `now`, `help`.
+- **`SUBCOMMANDS`** — `{ value, label }` array for tab-completion and the interactive picker. Includes `settings`, `on`, `off`, `status`, `model`, `thinking`, `prune-on`, `batching`, `stats`, `tree`, `list`, `now`, `clear`, `help`.
 - **`HELP_TEXT`** — full explanation of all subcommands, batching mode guidance, prune-on mode guidance, and a note on prompt-cache impact.
 - **`getArgumentCompletions(prefix)`** — filters `SUBCOMMANDS` by prefix for tab-completion.
 - **Bare `/pruner`** (no args) — calls `ctx.ui.select()` to show an interactive picker over `SUBCOMMANDS`.
@@ -193,6 +194,7 @@ Accumulates cumulative token/cost stats for summarizer LLM calls and persists th
 - **`/pruner prune-on [value]`** — gets or sets the trigger mode; bare form shows `ctx.ui.select()` picker over `PRUNE_ON_MODES`.
 - **`/pruner batching [value]`** — gets or sets the batching mode (`turn` or `agent-message`); bare form shows `ctx.ui.select()` picker over `BATCHING_MODES`.
 - **`/pruner tree`** — builds a `TreeNode[]` via `buildPruneTree()` and opens a `TreeBrowser` via `ctx.ui.custom()` so the user can browse pruned tool calls interactively.
+- **`/pruner list`** — calls `capturePendingBatches(ctx)` and displays the original compact, model-free queue view: aggregate queued tool-call and raw-character totals plus per-batch raw-character and tool-call counts.
 - **`/pruner now`** — previews the pending batch queue via `capturePendingBatches(ctx)` before opening the overlay (exits early with a notification if nothing is pending). Opens a `MultiBatchLoaderOverlay` (via `ctx.ui.custom()` with `overlay: true`) showing one animated spinner row per batch. Passes both `onProgress` and `onBatchTextProgress` to `flushPending` so each row first shows live received-character counts, then gets checked off as its individual LLM call completes. Esc closes the overlay but does NOT cancel in-flight LLM calls.
 - **`/pruner help`** — displays `HELP_TEXT` via `ctx.ui.notify`.
 - **`default` case** — directs unknown subcommands to run `/pruner help`.
